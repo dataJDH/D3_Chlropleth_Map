@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+
+<script src="../lib/d3.v5.min.js"></script>
+<script src="../lib/d3-scale-chromatic.v1.min.js"></script>
+<script src="../lib/topojson.v2.min.js"></script>
+
+<style type="text/css">
+
+/* On mouse hover, lighten state color */
+path:hover {
+	fill-opacity: .7;
+}
+
+/* Style for Custom Tooltip */
+div.tooltip {
+ 	position: absolute;
+	text-align: left;
+	width: 130px;
+	height: 45px;
+	padding: 2px;
+	font: 12px sans-serif;
+	background: white;
+	border: 0px;
+	border-radius: 8px;
+	pointer-events: none;
+}
+
+/* Legend Font Style */
+body {
+	font: 11px sans-serif;
+}
+
+/* Legend Position Style */
+.legend {
+	position:absolute;
+	left:840px;
+	top:350px;
+}
+
+</style>
+</head>
+<body>
+<script type="text/javascript">
+
+//Width and height of map
+var width = 960;
+var height = 500;
+
+// D3 Projection
+var projection = d3.geoAlbersUsa()
+				   .translate([width/2, height/2])    // translate to center of screen
+				   .scale([1000]);          // scale things down so see entire US
+
+// Define path generator
+var path = d3.geoPath()               // path generator that will convert GeoJSON to SVG paths
+		  	 .projection(projection);  // tell path generator to use albersUsa projection
+
+
+var thresholds = [0, 5, 10, 50, 100, 200, 500, 1000, 5000, 10000]
+var colors_m = ['#ccc', '#fff5f0', '#fee0d2', '#fcbba1', '#fc9272', '#fb6a4a', '#ef3b2c', '#cb181d', '#a50f15', '#67000d', '#ccc']
+
+// Define scale for output
+var color = d3.scaleThreshold()
+						.domain(thresholds)
+						.range(colors_m);
+
+
+//Create SVG element and append map to the SVG
+var svg = d3.select("body")
+			.append("svg")
+			.attr("width", width)
+			.attr("height", height);
+
+// Append Div for tooltip to SVG
+var div = d3.select("body")
+		    .append("div")
+    		.attr("class", "tooltip")
+    		.style("opacity", 0);
+
+// Load in my states data!
+d3.csv("state-earthquakes.csv").then(function(data) {
+
+      data.forEach(function(d) {
+          d["Total Earthquakes"] = +d["Total Earthquakes"]
+      });
+
+			console.log(data);
+			// Load GeoJSON data and merge with states data
+			d3.json("states-10m.json").then(function(json) {
+
+				// Loop through each state data value in the .csv file
+				for (var i = 0; i < data.length; i++) {
+
+				//Grab region
+				var dataRegion = data[i].Region
+				// Grab State Name
+				var dataState = data[i].States;
+				// Grab data value
+				var dataValue = data[i]["Total Earthquakes"];
+
+				// Find the corresponding state inside the GeoJSON
+				for (var j = 0; j < json.objects.states.geometries.length; j++)  {
+					var jsonState = json.objects.states.geometries[j].properties.name;
+
+						if (dataState == jsonState) {
+
+							// Copy the data value into the JSON
+							json.objects.states.geometries[j].properties.visited = dataValue;
+							json.objects.states.geometries[j].properties.region = dataRegion;
+							// Stop looking through the JSON
+							break;
+					  }
+					}
+				}
+
+				console.log(json);
+
+			// Bind the data to the SVG and create one path per GeoJSON feature
+			svg.selectAll("path")
+			.data(topojson.feature(json, json.objects.states).features)
+			.enter()
+			.append("path")
+			.attr("d", path)
+			.style("stroke", "#000000")
+			.style("stroke-width", "0.5")
+			.style("fill", function(d) {
+				// Get data value
+				var value = d.properties.visited;
+				return color(value);
+			})
+			//tooltip on mouseover
+			.on("mouseover", function(d) {
+				div.transition()
+				 .duration(200)
+				 .style("opacity", .9);
+				 div.html("State: "+ d.properties.name + "<br/>"  +
+					 				"Region: "+ d.properties.region + "<br/>"  +
+					 				"Earthquakes: " + d.properties.visited)
+				 .style("left", (d3.event.pageX) + "px")
+				 .style("top", (d3.event.pageY - 28) + "px");
+			 })
+			 // fade out tooltip on mouse out
+			 .on("mouseout", function(d) {
+				 div.transition()
+				 .duration(500)
+				 .style("opacity", 0);
+			 });
+
+			 //define variables for legend and make legend
+				var thresholds_s = ['1', '5', '10', '50', '100', '200', '500', '1000', '5000']
+ 				var colors_s = ['#fff5f0', '#fee0d2', '#fcbba1', '#fc9272', '#fb6a4a', '#ef3b2c', '#cb181d', '#a50f15', '#67000d']
+
+ 				var legend = d3.select("body").append("svg")
+			 					.attr("class", "legend")
+			 					.attr("width", 140)
+			 					.attr("height", 200)
+			 					.selectAll("g")
+			 					.data(colors_s)
+			 					.enter()
+			 					.append("g")
+			 					.attr("transform", function(d, i) { return "translate(0," + i * 20 + ")"; });
+
+				legend.append("rect")
+			 					.attr("width", 18)
+			 					.attr("height", 18)
+			 					.style("fill", function (d, i) {return colors_s[i]; });
+
+				legend.append("text")
+			 					.data(thresholds_s)
+			 					.attr("x", 24)
+			 					.attr("y", 9)
+			 					.attr("dy", ".35em")
+			 					.text(function(d) { return d; });
+
+				svg.append("text")
+			 					.attr("x", 840)
+			 					.attr("y", 333)
+			 					.attr("text-anchor", "middle")
+			 					.style("font-size", "12px")
+			 					.text("Earthquake frequency");
+
+
+
+/*d3.json("states-10m.json").then(function (data){
+ console.log(topojson.feature(data, data.objects.states).features);
+});*/
+
+		});
+});
+
+</script>
+</body>
+</html>
